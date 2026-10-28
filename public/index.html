@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Weather Tracker</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+        body { 
+            background: #0f172a; 
+            color: #f8fafc; 
+            min-height: 100vh; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            padding: 20px; 
+        }
+        .container { 
+            background: #1e293b; 
+            padding: 30px; 
+            border-radius: 16px; 
+            width: 100%; 
+            max-width: 420px; 
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); 
+            border: 1px solid #334155; 
+        }
+        h2 { margin-bottom: 20px; text-align: center; color: #38bdf8; }
+        
+        /* Container to anchor the floating dropdown */
+        .search-container {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .search-row { display: flex; gap: 8px; }
+        input { 
+            flex: 1; 
+            padding: 12px 14px; 
+            border-radius: 8px; 
+            border: 1px solid #475569; 
+            background: #0f172a; 
+            color: #fff; 
+            font-size: 1rem; 
+            outline: none; 
+        }
+        input:focus { border-color: #38bdf8; }
+        button { 
+            padding: 12px 18px; 
+            border-radius: 8px; 
+            border: none; 
+            background: #0284c7; 
+            color: white; 
+            font-weight: 600; 
+            cursor: pointer; 
+        }
+        button:hover { background: #0369a1; }
+
+        /* Autocomplete dropdown box */
+        .suggestions-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            margin-top: 4px;
+            list-style: none;
+            overflow: hidden;
+            display: none;
+            z-index: 10;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+        }
+        .suggestion-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #334155;
+            font-size: 0.95rem;
+            color: #cbd5e1;
+        }
+        .suggestion-item:last-child { border-bottom: none; }
+        .suggestion-item:hover {
+            background: #0284c7;
+            color: #fff;
+        }
+        .sub-text {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-left: 6px;
+        }
+        .suggestion-item:hover .sub-text {
+            color: #e2e8f0;
+        }
+
+        .result-card { 
+            display: none; 
+            background: #0f172a; 
+            padding: 20px; 
+            border-radius: 12px; 
+            text-align: center; 
+            border: 1px solid #334155; 
+            margin-top: 10px; 
+        }
+        .city-title { font-size: 1.25rem; font-weight: 600; color: #94a3b8; }
+        .temp-reading { font-size: 3.5rem; font-weight: bold; margin: 10px 0; color: #f8fafc; }
+        .humidity-reading { font-size: 0.95rem; color: #94a3b8; }
+        .msg { text-align: center; font-size: 0.9rem; margin-top: 10px; }
+        .error { color: #f87171; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Weather Lookup</h2>
+
+        <div class="search-container">
+            <div class="search-row">
+                <input type="text" id="cityInput" placeholder="Start typing a city (e.g. Jai...)" autocomplete="off" />
+                <button id="searchBtn">Search</button>
+            </div>
+            <!-- Recommendations dropdown -->
+            <ul id="suggestionsList" class="suggestions-list"></ul>
+        </div>
+
+        <div id="statusMsg" class="msg"></div>
+
+        <div id="resultCard" class="result-card">
+            <div id="cityName" class="city-title">--</div>
+            <div id="tempVal" class="temp-reading">--°C</div>
+            <div id="humidityVal" class="humidity-reading">Humidity: --%</div>
+        </div>
+    </div>
+
+    <script>
+        const searchBtn = document.getElementById('searchBtn');
+        const cityInput = document.getElementById('cityInput');
+        const resultCard = document.getElementById('resultCard');
+        const statusMsg = document.getElementById('statusMsg');
+        const suggestionsList = document.getElementById('suggestionsList');
+
+        const cityName = document.getElementById('cityName');
+        const tempVal = document.getElementById('tempVal');
+        const humidityVal = document.getElementById('humidityVal');
+
+        let debounceTimer;
+
+        // 1. Fetch suggestions as the user types
+        cityInput.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            const query = cityInput.value.trim();
+
+            if (query.length < 2) {
+                suggestionsList.style.display = 'none';
+                suggestionsList.innerHTML = '';
+                return;
+            }
+
+            // Debounce: Wait 300ms after user stops typing before making API call
+            debounceTimer = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/suggest?q=${encodeURIComponent(query)}`);
+                    const places = await res.json();
+
+                    if (!places || places.length === 0) {
+                        suggestionsList.style.display = 'none';
+                        return;
+                    }
+
+                    // Render recommendations
+                    suggestionsList.innerHTML = '';
+                    places.forEach(item => {
+                        const li = document.createElement('li');
+                        li.className = 'suggestion-item';
+                        
+                        const sub = item.state ? `${item.state}, ${item.country}` : item.country;
+                        li.innerHTML = `<strong>${item.name}</strong><span class="sub-text">${sub}</span>`;
+
+                        // When user clicks a recommendation:
+                        li.addEventListener('click', () => {
+                            cityInput.value = item.name;
+                            suggestionsList.style.display = 'none';
+                            fetchWeather(item.name);
+                        });
+
+                        suggestionsList.appendChild(li);
+                    });
+
+                    suggestionsList.style.display = 'block';
+                } catch (err) {
+                    console.error('Failed to get suggestions:', err);
+                }
+            }, 300);
+        });
+
+        // Close dropdown if user clicks outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search-container')) {
+                suggestionsList.style.display = 'none';
+            }
+        });
+
+        // 2. Fetch the weather
+        async function fetchWeather(cityOverride) {
+            const query = cityOverride || cityInput.value.trim();
+            if (!query) return;
+
+            suggestionsList.style.display = 'none';
+            statusMsg.textContent = 'Searching...';
+            statusMsg.className = 'msg';
+            resultCard.style.display = 'none';
+
+            try {
+                const response = await fetch(`/api/weather?city=${encodeURIComponent(query)}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to fetch weather');
+                }
+
+                cityName.textContent = `${data.place || data.city}, ${data.country}`;
+                tempVal.textContent = `${data.temp}${data.unit}`;
+                humidityVal.textContent = `Humidity: ${data.humidity}%`;
+
+                statusMsg.textContent = '';
+                resultCard.style.display = 'block';
+
+            } catch (err) {
+                statusMsg.textContent = err.message;
+                statusMsg.className = 'msg error';
+            }
+        }
+
+        searchBtn.addEventListener('click', () => fetchWeather());
+        cityInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                suggestionsList.style.display = 'none';
+                fetchWeather();
+            }
+        });
+    </script>
+</body>
+</html>
